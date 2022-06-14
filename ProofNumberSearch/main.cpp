@@ -1,4 +1,3 @@
-#include <cstdio>
 #include "InputHandler.h"
 
 int main() {

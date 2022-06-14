@@ -9,8 +9,8 @@
 #define MESSAGE_P1 "FIRST_PLAYER_WINS\n"
 #define MESSAGE_P2 "SECOND_PLAYER_WINS\n"
 
-#define P1_WIN 1
-#define P1_LOSS -1
+#define WIN 1
+#define LOSS -1
 #define TIE 0
 
 #define INFINTE INT_MAX
@@ -40,7 +40,7 @@ class NmkEngine {
 		Move moveMade;
 		Value value;
 		LinkedMoveList* threats;
-		Type getOppositeType();
+		Type getOppositeType() const;
 	};
 public:
 	NmkEngine(Board& board, int k, Player player);
@@ -49,15 +49,14 @@ private:
 	Board& board;
 	int minToWin;
 	Player player;
-	int proofNumberSearch(Node* root, int maxNodes);
-	void evaluate(Node* root);
-	void setProofAndDisproofNumbers(Node* node);
+	int proofNumberSearch(Node* root);
+	void evaluate(Node* root) const;
+	static void setProofAndDisproofNumbers(Node* node);
 	Node* selectMostProvingNode(Node* node);
 	void expandNode(Node* node);
 	Node* updateAncestors(Node* node, Node* root);
 	void generateChildren(Node* node);
-	void setNodeValue(Node* node, Player& winningPlayer);
-	bool isWinning(const Player& currPlayer) const;
+	void setNodeValue(Node* node, Player& winningPlayer) const;
 	bool isWinning(int x, int y) const;
 	bool isWinning(int startX, int startY, int dx, int dy) const;
 	int howManyInDirection(int startX, int startY, int dx, int dy) const;
@@ -65,10 +64,9 @@ private:
 	void addThreats(Move& currMove, LinkedMoveList& threats, int dx, int dy) const;
 	Move* howManyInDirectionWithSkip(Move& currMove, int dx, int dy, int& counter, int& skipCounter) const;
 	LinkedMoveList* generatePossibleMoves(const Player& currPlayer, LinkedMoveList& threats);
-	bool isOver(const Player& currPlayer, int lastX = UNKNOWN_MOVE, int lastY = UNKNOWN_MOVE) const;
 	void removeBlockedThreats(Move& currMove, LinkedMoveList& threats) const;
 	static bool moveWasWinning(Move& currMove, LinkedMoveList& threats);
-	static int resultByPlayer(Player pl);
+	Player getWinningPlayer(int result) const;
 	void fillThreatsAtStart(LinkedMoveList& threats) const;
-	bool detectDraw(Node* node);
+	bool detectTie(Node* node);
 };

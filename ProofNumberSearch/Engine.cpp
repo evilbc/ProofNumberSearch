@@ -3,120 +3,48 @@
 NmkEngine::NmkEngine(Board& board, int k, Player player) : board(board), minToWin(k), player(player) {
 }
 
-LinkedMoveList* NmkEngine::generatePossibleMoves(const Player& currPlayer, LinkedMoveList& threats) {
-	LinkedMoveList* solutions = new LinkedMoveList();
-	if (threats.sizeByPlayer(currPlayer.getOpponent()) > 0) {
-		for (LinkedMoveList::Iterator it = threats.start(); it.hasNext(); it.next()) {
-			if (it.get().player != currPlayer) {
-				solutions->push(new Move(currPlayer, it.get().x, it.get().y));
-			}
-		}
-		return solutions;
-	}
-
+void NmkEngine::solve() {
 	for (int y = 0; y < board.getHeight(); y++) {
 		for (int x = 0; x < board.getWidth(); x++) {
-			if (board.getPlayer(x, y) == Player::NONE) {
-				solutions->push(new Move(currPlayer, x, y));
-			}
-		}
-	}
-	return solutions;
-}
-
-bool NmkEngine::isOver(const Player& currPlayer, int lastX, int lastY) const {
-	if (board.isFull()) {
-		return true;
-	}
-	if (lastX == UNKNOWN_MOVE || lastY == UNKNOWN_MOVE) {
-		return isWinning(currPlayer.getOpponent()) || isWinning(currPlayer);
-	} else {
-		return isWinning(lastX, lastY);
-	}
-}
-
-bool NmkEngine::isWinning(const Player& currPlayer) const {
-	for (int y = 0; y < board.getHeight(); y++) {
-		for (int x = 0; x < board.getWidth(); x++) {
-			if (currPlayer != board.getPlayer(x, y)) {
+			if (Player::NONE == board.getPlayer(x, y)) {
 				continue;
 			}
 			if (isWinning(x, y)) {
-				return true;
+				printf(board.getPlayer(x, y) == Player::FIRST ? MESSAGE_P1 : MESSAGE_P2);
+				return;
 			}
 		}
 	}
-	return false;
-}
-
-bool NmkEngine::isWinning(int x, int y) const {
-	return isWinning(x, y, 1, 0)
-		|| isWinning(x, y, 0, 1)
-		|| isWinning(x, y, 1, 1)
-		|| isWinning(x, y, 1, -1);
-}
-
-bool NmkEngine::isWinning(int startX, int startY, int dx, int dy) const {
-	int counter = 1 + howManyInDirection(startX, startY, dx, dy) + howManyInDirection(startX, startY, -dx, -dy);
-	return counter >= minToWin;
-}
-
-int NmkEngine::howManyInDirection(int startX, int startY, int dx, int dy) const {
-	Player currPlayer = board.getPlayer(startX, startY);
-	int counter = 0;
-	int x = startX + dx;
-	int y = startY + dy;
-	while (board.withinBounds(x, y)) {
-		if (board.getPlayer(x, y) != currPlayer) {
-			break;
-		}
-		counter++;
-		x += dx;
-		y += dy;
+	LinkedMoveList* threatsAtStart = new LinkedMoveList();
+	fillThreatsAtStart(*threatsAtStart);
+	Move move = Move(player.getOpponent(), UNKNOWN_MOVE, UNKNOWN_MOVE);
+	Node* root = new Node(nullptr, move, Type::OR, threatsAtStart);
+	int result = proofNumberSearch(root);
+	delete root;
+	if (result == TIE) {
+		printf(MESSAGE_TIE);
+		return;
 	}
-	return counter;
+	printf(getWinningPlayer(result) == Player::FIRST ? MESSAGE_P1 : MESSAGE_P2);
 }
 
-bool NmkEngine::detectDraw(Node* node) {
-	if (node->childrenCount == 0) {
-		if (node->value == Value::UNKNOWN) {
-			evaluate(node);
-		}
-		if (node->value == Value::UNKNOWN) {
-			generateChildren(node);
-			return detectDraw(node);
-		}
-		return node->value == Value::DRAWN || node->value == Value::PROVEN;
+int NmkEngine::proofNumberSearch(Node* root) {
+	evaluate(root);
+	setProofAndDisproofNumbers(root);
+	Node* currentNode = root;
+	while (root->proof != 0 && root->disproof != 0) {
+		Node* mostProvingNode = selectMostProvingNode(currentNode);
+		expandNode(mostProvingNode);
+		currentNode = updateAncestors(mostProvingNode, root);
 	}
-	if (node->type == Type::AND) {
-		for (int i = 0; i < node->childrenCount; i++) {
-			Node* child = node->children[i];
-			board.makeAMove(child->moveMade);
-			if (!detectDraw(child)) {
-				board.undoMove(child->moveMade);
-				return false;
-			}
-			board.undoMove(child->moveMade);
-		}
-		return true;
+	if (root->proof == 0) {
+		return WIN;
 	}
-	for (int i = 0; i < node->childrenCount; i++) {
-		Node* child = node->children[i];
-		board.makeAMove(child->moveMade);
-		if (detectDraw(child)) {
-			board.undoMove(child->moveMade);
-			return true;
-		}
-		board.undoMove(child->moveMade);
-	}
-	return false;
+	bool tie = root->value != Value::UNKNOWN ? root->value == Value::DRAWN : detectTie(root);
+	return tie ? TIE : LOSS;
 }
 
-void NmkEngine::setNodeValue(Node* node, Player& winningPlayer) {
-	node->value = winningPlayer == player ? Value::PROVEN : Value::DISPROVEN;
-}
-
-void NmkEngine::evaluate(Node* root) {
+void NmkEngine::evaluate(Node* root) const {
 	Player playerToMove = root->moveMade.player.getOpponent();
 	if (moveWasWinning(root->moveMade, *root->threats)) {
 		setNodeValue(root, root->moveMade.player);
@@ -136,32 +64,6 @@ void NmkEngine::evaluate(Node* root) {
 		setNodeValue(root, root->moveMade.player);
 		return;
 	}
-}
-
-int NmkEngine::proofNumberSearch(Node* root, int maxNodes) {
-	evaluate(root);
-	setProofAndDisproofNumbers(root);
-	Node* currentNode = root;
-	while (root->proof != 0 && root->disproof != 0) {
-		Node* mostProvingNode = selectMostProvingNode(currentNode);
-		expandNode(mostProvingNode);
-		currentNode = updateAncestors(mostProvingNode, root);
-	}
-	if (root->proof == 0) {
-		return 1;
-	}
-	if (root->value != Value::UNKNOWN) {
-		return root->value == Value::DRAWN ? 0 : -1;
-	}
-	//for (int i = 0; i < root->childrenCount; i++) {
-	//	Node* child = root->children[i];
-	//	if (detectDraw(child)) {
-	//		return 0;
-	//	}
-	//}
-	//return -1;
-	return detectDraw(root) ? 0 : -1;
-	//return 1;
 }
 
 void NmkEngine::setProofAndDisproofNumbers(Node* node) {
@@ -187,13 +89,6 @@ void NmkEngine::setProofAndDisproofNumbers(Node* node) {
 		node->disproof = INFINTE;
 		for (int i = 0; i < node->childrenCount; i++) {
 			Node* child = node->children[i];
-			//if (child->proof == INFINTE) {
-			//	if (child->value == Value::DISPROVEN) {
-			//		node->value == Value::DISPROVEN;
-			//	} else if (node->value != Value::DISPROVEN) {
-			//		node->value = Value::DRAWN;
-			//	}
-			//}
 			node->proof += child->proof;
 			if (node->proof < 0) node->proof = INFINTE;
 			if (child->disproof < node->disproof) {
@@ -205,13 +100,6 @@ void NmkEngine::setProofAndDisproofNumbers(Node* node) {
 		node->disproof = 0;
 		for (int i = 0; i < node->childrenCount; i++) {
 			Node* child = node->children[i];
-			//if (child->disproof == INFINTE) {
-			//	if (child->value == Value::DRAWN) {
-			//		node->value == Value::DRAWN;
-			//	} else if (node->value != Value::DRAWN) {
-			//		node->value = Value::DISPROVEN;
-			//	}
-			//}
 			node->disproof += child->disproof;
 			if (node->disproof < 0) node->disproof = INFINTE;
 			if (child->proof < node->proof) {
@@ -223,9 +111,6 @@ void NmkEngine::setProofAndDisproofNumbers(Node* node) {
 
 NmkEngine::Node* NmkEngine::selectMostProvingNode(Node* node) {
 	while (node->expanded) {
-		//if (node->childrenCount == 0) {
-		//	break;
-		//}
 		int i = 0;
 		Node* child = node->children[i++];
 		if (node->type == Type::OR) {
@@ -257,26 +142,10 @@ void NmkEngine::expandNode(Node* node) {
 			if (child->proof == 0) break;
 		}
 	}
-	//if (node->childrenCount > 0)
-		node->expanded = true;
+	node->expanded = true;
 }
 
 NmkEngine::Node* NmkEngine::updateAncestors(Node* node, Node* root) {
-	//while (node != root) {
-	//	int oldProof = node->proof;
-	//	int oldDisproof = node->disproof;
-	//	setProofAndDisproofNumbers(node);
-	//	if (node->proof == oldProof && node->disproof == oldDisproof) {
-	//		return node;
-	//	}
-	//	//if (node->proof == 0 || node->disproof == 0) {
-	//	//    delete node;
-	//	//}
-	//	board.undoMove(node->moveMade);
-	//	node = node->parent;
-	//}
-	//setProofAndDisproofNumbers(root);
-	//return root;
 	do {
 		int oldProof = node->proof;
 		int oldDisproof = node->disproof;
@@ -284,10 +153,6 @@ NmkEngine::Node* NmkEngine::updateAncestors(Node* node, Node* root) {
 		setProofAndDisproofNumbers(node);
 		if (node->proof == oldProof && node->disproof == oldDisproof) {
 			return node;
-		}
-		if (node->proof == 0 || node->disproof == 0) {
-			//delete subtree
-			int a = 1;
 		}
 		if (node == root) {
 			return node;
@@ -298,9 +163,6 @@ NmkEngine::Node* NmkEngine::updateAncestors(Node* node, Node* root) {
 }
 
 void NmkEngine::generateChildren(Node* node) {
-	//if (node->value == Value::PROVEN || node->value == Value::DISPROVEN || board.isFull()) {
-	//	return;
-	//}
 	if (board.isFull()) {
 		node->childrenCount = 0;
 		return;
@@ -314,6 +176,94 @@ void NmkEngine::generateChildren(Node* node) {
 		node->children[i++] = new Node(node, it.get(), oppositeType, new LinkedMoveList(*node->threats));
 	}
 	delete possibleMoves;
+}
+
+bool NmkEngine::detectTie(Node* node) {
+	if (node->childrenCount == 0) {
+		if (node->value == Value::UNKNOWN) {
+			evaluate(node);
+		}
+		if (node->value == Value::UNKNOWN) {
+			generateChildren(node);
+			return detectTie(node);
+		}
+		return node->value == Value::DRAWN || node->value == Value::PROVEN;
+	}
+	if (node->type == Type::AND) {
+		for (int i = 0; i < node->childrenCount; i++) {
+			Node* child = node->children[i];
+			board.makeAMove(child->moveMade);
+			if (!detectTie(child)) {
+				board.undoMove(child->moveMade);
+				return false;
+			}
+			board.undoMove(child->moveMade);
+		}
+		return true;
+	}
+	for (int i = 0; i < node->childrenCount; i++) {
+		Node* child = node->children[i];
+		board.makeAMove(child->moveMade);
+		if (detectTie(child)) {
+			board.undoMove(child->moveMade);
+			return true;
+		}
+		board.undoMove(child->moveMade);
+	}
+	return false;
+}
+
+void NmkEngine::setNodeValue(Node* node, Player& winningPlayer) const {
+	node->value = winningPlayer == player ? Value::PROVEN : Value::DISPROVEN;
+}
+
+LinkedMoveList* NmkEngine::generatePossibleMoves(const Player& currPlayer, LinkedMoveList& threats) {
+	LinkedMoveList* solutions = new LinkedMoveList();
+	if (threats.sizeByPlayer(currPlayer.getOpponent()) > 0) {
+		for (LinkedMoveList::Iterator it = threats.start(); it.hasNext(); it.next()) {
+			if (it.get().player != currPlayer) {
+				solutions->push(new Move(currPlayer, it.get().x, it.get().y));
+			}
+		}
+		return solutions;
+	}
+
+	for (int y = 0; y < board.getHeight(); y++) {
+		for (int x = 0; x < board.getWidth(); x++) {
+			if (board.getPlayer(x, y) == Player::NONE) {
+				solutions->push(new Move(currPlayer, x, y));
+			}
+		}
+	}
+	return solutions;
+}
+
+bool NmkEngine::isWinning(int x, int y) const {
+	return isWinning(x, y, 1, 0)
+		|| isWinning(x, y, 0, 1)
+		|| isWinning(x, y, 1, 1)
+		|| isWinning(x, y, 1, -1);
+}
+
+bool NmkEngine::isWinning(int startX, int startY, int dx, int dy) const {
+	int counter = 1 + howManyInDirection(startX, startY, dx, dy) + howManyInDirection(startX, startY, -dx, -dy);
+	return counter >= minToWin;
+}
+
+int NmkEngine::howManyInDirection(int startX, int startY, int dx, int dy) const {
+	Player currPlayer = board.getPlayer(startX, startY);
+	int counter = 0;
+	int x = startX + dx;
+	int y = startY + dy;
+	while (board.withinBounds(x, y)) {
+		if (board.getPlayer(x, y) != currPlayer) {
+			break;
+		}
+		counter++;
+		x += dx;
+		y += dy;
+	}
+	return counter;
 }
 
 void NmkEngine::removeBlockedThreats(Move& currMove, LinkedMoveList& threats) const {
@@ -409,41 +359,6 @@ Move* NmkEngine::howManyInDirectionWithSkip(Move& currMove, int dx, int dy, int&
 	return skip;
 }
 
-void NmkEngine::solve() {
-	for (int y = 0; y < board.getHeight(); y++) {
-		for (int x = 0; x < board.getWidth(); x++) {
-			if (Player::NONE == board.getPlayer(x, y)) {
-				continue;
-			}
-			if (isWinning(x, y)) {
-				if (board.getPlayer(x, y) == Player::FIRST) {
-					printf(MESSAGE_P1);
-					return;
-				} else {
-					printf(MESSAGE_P2);
-					return;
-				}
-			}
-		}
-	}
-	LinkedMoveList* threatsAtStart = new LinkedMoveList();
-	fillThreatsAtStart(*threatsAtStart);
-	Move move = Move(player.getOpponent(), UNKNOWN_MOVE, UNKNOWN_MOVE);
-	Node* root = new Node(nullptr, move, Type::OR, threatsAtStart);
-	//generateChildren(root);
-	//root->expanded = true;
-	int result = proofNumberSearch(root, 1);
-	delete root;
-	if (result == TIE) {
-		printf(MESSAGE_TIE);
-		return;
-	}
-	//printf(result == P1_WIN ? MESSAGE_P1 : MESSAGE_P2);
-	printf(result == 1 
-		? player == Player::FIRST ? MESSAGE_P1 : MESSAGE_P2
-		: player == Player::FIRST ? MESSAGE_P2 : MESSAGE_P1);
-}
-
 void NmkEngine::fillThreatsAtStart(LinkedMoveList& threats) const {
 	for (int y = 0; y < board.getHeight(); y++) {
 		for (int x = 0; x < board.getWidth(); x++) {
@@ -454,6 +369,11 @@ void NmkEngine::fillThreatsAtStart(LinkedMoveList& threats) const {
 		}
 	}
 }
+
+Player NmkEngine::getWinningPlayer(int result) const {
+	return result == WIN ? player : player.getOpponent();
+}
+
 
 NmkEngine::Node::Node(Node* parent, Move move, Type type, LinkedMoveList* threats) : parent(parent), children(nullptr), proof(1), disproof(1), childrenCount(0), type(type), expanded(false), moveMade(move), value(Value::UNKNOWN), threats(threats) {
 }
@@ -466,6 +386,6 @@ NmkEngine::Node::~Node() {
 	delete threats;
 }
 
-NmkEngine::Type NmkEngine::Node::getOppositeType() {
+NmkEngine::Type NmkEngine::Node::getOppositeType() const {
 	return type == Type::AND ? Type::OR : Type::AND;
 }
