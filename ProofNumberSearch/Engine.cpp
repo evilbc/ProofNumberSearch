@@ -219,14 +219,14 @@ void NmkEngine::setNodeValue(Node* node, Player& winningPlayer) const {
 
 LinkedMoveList* NmkEngine::generatePossibleMoves(const Player& currPlayer, LinkedMoveList& threats) {
 	LinkedMoveList* solutions = new LinkedMoveList();
-	if (threats.sizeByPlayer(currPlayer.getOpponent()) > 0) {
-		for (LinkedMoveList::Iterator it = threats.start(); it.hasNext(); it.next()) {
-			if (it.get().player != currPlayer) {
-				solutions->push(new Move(currPlayer, it.get().x, it.get().y));
-			}
-		}
-		return solutions;
-	}
+	//if (threats.sizeByPlayer(currPlayer.getOpponent()) > 0) {
+	//	for (LinkedMoveList::Iterator it = threats.start(); it.hasNext(); it.next()) {
+	//		if (it.get().player != currPlayer) {
+	//			solutions->push(new Move(currPlayer, it.get().x, it.get().y));
+	//		}
+	//	}
+	//	return solutions;
+	//}
 
 	for (int y = 0; y < board.getHeight(); y++) {
 		for (int x = 0; x < board.getWidth(); x++) {
